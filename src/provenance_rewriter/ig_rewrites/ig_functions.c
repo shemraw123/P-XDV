@@ -228,8 +228,6 @@ QueryOperator *cleanEXPL(QueryOperator *qo)
 }
 
 
-
-
 //rewrite conversion functions
 
 Ascii *convertArtoAscii(AttributeReference *a)

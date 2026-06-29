@@ -59,6 +59,18 @@
 #define MINFSCORETOPK "minfscoreTopK"
 
 
+static boolean igIsConvertedOutputAttr(char *attrName);
+//pricing
+#define PRICE_PREFIX "price_"
+#define TOTAL_PRICE "Total_Price"
+#define DEFAULT_TUPLE_PRICE 100
+
+static ProjectionOperator *rewriteIG_Pricing(ProjectionOperator *cleanProj);
+static Node *igMakeFloatConstInt(int v);
+static Node *igMakeSumOrSingle(List *exprs);
+static Node *igGetPostedPriceExpr(ProjectionOperator *cleanProj);
+//pricing
+
 static QueryOperator *rewriteIG_Operator (QueryOperator *op);
 static QueryOperator *rewriteIG_Conversion (ProjectionOperator *op);
 static QueryOperator *rewriteIG_Projection(ProjectionOperator *op);
@@ -555,9 +567,6 @@ rewriteIG_HammingFunctions (ProjectionOperator *newProj)
 //    	pos++;
 	}
 
-    // collect corresponding attributes of shared data
-//    pos = 0;
-
     FOREACH(AttributeDef,a,attrR)
 	{
     	if(isPrefix(a->attrName,IG_PREFIX))
@@ -873,45 +882,6 @@ rewriteIG_HammingFunctions (ProjectionOperator *newProj)
 		}
 	}
 
-// OUTDATED CODES
-//	FOREACH(AttributeReference, arR, igAttrR)
-//	{
-//		List *cast = NIL;
-//		lend = 1;
-//		FOREACH(AttributeReference, arL, igAttrL)
-//		{
-//			//FOR SAME ATTRIBUTES
-//			if(isSubstr(arR->name, arL->name) == TRUE)
-//			{
-//				CastExpr *castL;
-//				CastExpr *castR;
-//				castL = createCastExpr((Node *) arL, DT_STRING);
-//				castR = createCastExpr((Node *) arR, DT_STRING);
-//				cast = LIST_MAKE(castL, castR);
-//				FunctionCall *hammingdist = createFunctionCall("hammingxor", cast);
-//				exprs = appendToTailOfList(exprs,hammingdist);
-//				char *name = CONCAT_STRINGS(HAMMING_PREFIX, substr(arR->name, 8 , strlen(arR->name) - 1));
-//				atNames = appendToTailOfList(atNames, name);
-//				break;
-//			}
-//			//UNIQUE ATTRIBUTES FROM R
-//			else if(lend >= LL)
-//			{
-//				CastExpr *castR;
-//				castR = createCastExpr((Node *) arR, DT_STRING);
-//				cast = LIST_MAKE(createConstString("0000000000"), castR);
-//				FunctionCall *hammingdist = createFunctionCall("hammingxor", cast);
-//				exprs = appendToTailOfList(exprs,hammingdist);
-//				char *name = CONCAT_STRINGS(HAMMING_PREFIX, substr(arR->name, 8 , strlen(arR->name) - 1));
-//				atNames = appendToTailOfList(atNames, name);
-//			}
-//			else
-//			{
-//				lend = lend + 1;
-//			}
-//
-//		}
-//	}
 
 	//UNIQUE IG_INTEG ATTRIBUTES FROM L
 	FOREACH(AttributeReference, arL, cleanigAttrL)
@@ -934,34 +904,6 @@ rewriteIG_HammingFunctions (ProjectionOperator *newProj)
 			}
 		}
 	}
-
-//	FOREACH(AttributeReference, arL, igAttrL)
-//	{
-//		List *cast = NIL;
-//		rend = 1;
-//		FOREACH(AttributeReference, arR, igAttrR)
-//		{
-//			if(isSubstr(arR->name, arL->name) == TRUE)
-//			{
-//				break;
-//			}
-//			else if(rend >= RR)
-//			{
-//				CastExpr *castL;
-//				castL = createCastExpr((Node *) arL, DT_STRING);
-//				cast = LIST_MAKE(createConstString("0000000000"), castL);
-//				FunctionCall *hammingdist = createFunctionCall("hammingxor", cast);
-//				exprs = appendToTailOfList(exprs,hammingdist);
-//				char *name = CONCAT_STRINGS(HAMMING_PREFIX, substr(arL->name, 8 , strlen(arL->name) - 1));
-//				atNames = appendToTailOfList(atNames, name);
-//			}
-//			else
-//			{
-//				rend = rend + 1;
-//			}
-//
-//		}
-//	}
 
 	ProjectionOperator *hamming_op = createProjectionOp(exprs, NULL, NIL, atNames);
 
@@ -2070,6 +2012,456 @@ rewriteIG_Analysis (AggregationOperator *patterns)
 
 }
 
+/*
+ * Pricing function for P-XDV.
+ *
+ * Uses:
+ *      lambda = 0.5
+ *      w_A    = 1/4 = 0.25
+ *
+ * Formula:
+ *      price(A) = (1 - lambda) * w_A * pi
+ *               + lambda * pi * IG(A) / TotalIG
+ *
+ * With lambda = 0.5 and w_A = 0.25:
+ *
+ *      price(A) = pi / 8 + pi * IG(A) / (2 * TotalIG)
+ *
+ * This function prices only shared/right-side IG columns:
+ *
+ *      IG_right_*
+ *
+ * It adds:
+ *
+ *      price_right_*
+ *      Total_Price
+ *
+ * If there is a column named "price", "base_price", or "posted_price",
+ * it uses that as pi. Otherwise it uses DEFAULT_TUPLE_PRICE.
+ */
+
+static ProjectionOperator *
+rewriteIG_Pricing(ProjectionOperator *cleanProj)
+{
+    ASSERT(OP_LCHILD(cleanProj));
+
+    DEBUG_LOG("REWRITE-IG - Pricing");
+    DEBUG_LOG("Operator tree \n%s", nodeToString(cleanProj));
+
+    List *priceExprs = NIL;
+    List *priceNames = NIL;
+
+    /*
+     * All attribute-level IG columns that should be priced.
+     *
+     * This includes both:
+     *      IG_left_*
+     *      IG_right_*
+     *
+     * Example:
+     *      IG_left_quality_integ
+     *      IG_right_gdays_integ
+     */
+    List *igRefs = NIL;
+    List *attrPriceExprsForTotal = NIL;
+
+    int pos = 0;
+
+    /*
+     * Keep clean output columns and collect IG columns.
+     */
+    FOREACH(AttributeDef, a, cleanProj->op.schema->attrDefs)
+    {
+        AttributeReference *ar = createFullAttrReference(
+                a->attrName,
+                0,
+                pos,
+                0,
+                a->dataType);
+
+        /*
+         * Collect all final IG columns for pricing.
+         * Do not collect Total_IG here because it is not prefix IG_.
+         */
+        if(isPrefix(a->attrName, "IG_"))
+        {
+            AttributeReference *igAr = createFullAttrReference(
+                    a->attrName,
+                    0,
+                    pos,
+                    0,
+                    a->dataType);
+
+            igRefs = appendToTailOfList(igRefs, igAr);
+        }
+
+        /*
+         * Keep clean display columns.
+         * This removes internal helper columns but keeps:
+         *      IG_*
+         *      Total_IG
+         *      normal output attrs
+         *      provenance attrs
+         */
+        if(!igIsConvertedOutputAttr(a->attrName))
+        {
+            priceExprs = appendToTailOfList(priceExprs, ar);
+            priceNames = appendToTailOfList(priceNames, a->attrName);
+        }
+
+        pos++;
+    }
+
+    /*
+     * Posted seller price pi.
+     * Uses price/base_price/posted_price/ps/p_s/b_price if present;
+     * otherwise falls back to DEFAULT_TUPLE_PRICE.
+     */
+    Node *postedPrice = igGetPostedPriceExpr(cleanProj);
+
+    /*
+     * If there are no IG columns, still add Total_Price = 0.
+     */
+    if(igRefs == NIL || LIST_LENGTH(igRefs) == 0)
+    {
+        priceExprs = appendToTailOfList(priceExprs, igMakeFloatConstInt(0));
+        priceNames = appendToTailOfList(priceNames, strdup(TOTAL_PRICE));
+    }
+    else
+    {
+        /*
+         * Denominator:
+         *      DG(pt)
+         *
+         * This is the sum of all attribute-level IG/DG columns.
+         * Example:
+         *      IG_left_quality_integ + IG_right_gdays_integ
+         */
+        Node *priceTotalIG = igMakeSumOrSingle(copyObject(igRefs));
+
+        /*
+         * For each IG column, create the corresponding price column.
+         *
+         * Formula with lambda = 0.5 and w = 0.25:
+         *
+         *      price(A) = pi / 8 + pi * IG(A) / (2 * TotalIG)
+         *
+         * If IG(A) = 0, then price(A) = 0.
+         */
+        FOREACH(AttributeReference, igAr, igRefs)
+        {
+            Node *igVal = (Node *) copyObject(igAr);
+
+            Node *igGtZero = (Node *) createOpExpr(
+                    OPNAME_GT,
+                    LIST_MAKE(copyObject(igVal), createConstInt(0)));
+
+            Node *totalGtZero = (Node *) createOpExpr(
+                    OPNAME_GT,
+                    LIST_MAKE(copyObject(priceTotalIG), createConstInt(0)));
+
+            Node *cond = (Node *) createOpExpr(
+                    OPNAME_AND,
+                    LIST_MAKE(igGtZero, totalGtZero));
+
+            /*
+             * leftPart = pi / 8
+             */
+            Node *leftPart = (Node *) createOpExpr(
+                    OPNAME_DIV,
+                    LIST_MAKE(
+                        createCastExpr(copyObject(postedPrice), DT_FLOAT),
+                        igMakeFloatConstInt(8)));
+
+            /*
+             * rightPart = pi * IG(A) / (2 * TotalIG)
+             */
+            Node *numerator = (Node *) createOpExpr(
+                    OPNAME_MULT,
+                    LIST_MAKE(
+                        createCastExpr(copyObject(postedPrice), DT_FLOAT),
+                        createCastExpr(copyObject(igVal), DT_FLOAT)));
+
+            Node *denominator = (Node *) createOpExpr(
+                    OPNAME_MULT,
+                    LIST_MAKE(
+                        igMakeFloatConstInt(2),
+                        createCastExpr(copyObject(priceTotalIG), DT_FLOAT)));
+
+            Node *rightPart = (Node *) createOpExpr(
+                    OPNAME_DIV,
+                    LIST_MAKE(numerator, denominator));
+
+            Node *priceRaw = (Node *) createOpExpr(
+                    OPNAME_ADD,
+                    LIST_MAKE(leftPart, rightPart));
+
+            CaseWhen *cw = createCaseWhen(cond, priceRaw);
+
+            CaseExpr *priceCase = createCaseExpr(
+                    NULL,
+                    singleton(cw),
+                    igMakeFloatConstInt(0));
+
+            priceExprs = appendToTailOfList(priceExprs, priceCase);
+
+            /*
+             * Column name:
+             *
+             *      IG_left_quality_integ  -> price_left_quality
+             *      IG_right_gdays_integ   -> price_right_gdays
+             */
+            char *suffix = replaceSubstr(igAr->name, "IG_", "");
+            suffix = replaceSubstr(suffix, INTEG_SUFFIX, "");
+
+            char *priceName = CONCAT_STRINGS(PRICE_PREFIX, suffix);
+
+            priceNames = appendToTailOfList(priceNames, priceName);
+
+            attrPriceExprsForTotal = appendToTailOfList(
+                    attrPriceExprsForTotal,
+                    copyObject(priceCase));
+        }
+
+        /*
+         * Add Total_Price = sum(attribute-level prices)
+         */
+        Node *totalPrice = igMakeSumOrSingle(attrPriceExprsForTotal);
+
+        priceExprs = appendToTailOfList(priceExprs, totalPrice);
+        priceNames = appendToTailOfList(priceNames, strdup(TOTAL_PRICE));
+    }
+
+    ProjectionOperator *priceProj = createProjectionOp(priceExprs, NULL, NIL, priceNames);
+
+    /*
+     * Make price columns FLOAT.
+     */
+    FOREACH(AttributeDef, n, priceProj->op.schema->attrDefs)
+    {
+        if(isPrefix(n->attrName, PRICE_PREFIX)
+                || streq(n->attrName, TOTAL_PRICE))
+        {
+            n->dataType = DT_FLOAT;
+        }
+    }
+
+    /*
+     * Final display order to match Figure 1:
+     *
+     *      1. Q output
+     *      2. buyer table provenance: a_*
+     *      3. seller table provenance: b_*
+     *      4. value provenance: ProvW_*
+     *      5. DG columns: IG_* and Total_IG
+     *      6. price columns: ps / price_* / Total_Price
+     */
+    List *qExprs = NIL;
+    List *qDefs = NIL;
+
+    List *aProvExprs = NIL;
+    List *aProvDefs = NIL;
+
+    List *bProvExprs = NIL;
+    List *bProvDefs = NIL;
+
+    List *provWExprs = NIL;
+    List *provWDefs = NIL;
+
+    List *dgExprs = NIL;
+    List *dgDefs = NIL;
+
+    List *totalDGExprs = NIL;
+    List *totalDGDefs = NIL;
+
+    List *postedPriceExprs = NIL;
+    List *postedPriceDefs = NIL;
+
+    List *attrPriceExprs = NIL;
+    List *attrPriceDefs = NIL;
+
+    List *totalPriceExprs = NIL;
+    List *totalPriceDefs = NIL;
+
+    int reorderPos = 0;
+
+    FOREACH(AttributeDef, a, priceProj->op.schema->attrDefs)
+    {
+        Node *expr = (Node *) getNthOfListP(priceProj->projExprs, reorderPos);
+
+        if(isPrefix(a->attrName, "a_"))
+        {
+            aProvExprs = appendToTailOfList(aProvExprs, expr);
+            aProvDefs = appendToTailOfList(aProvDefs, a);
+        }
+        else if(isPrefix(a->attrName, "b_"))
+        {
+            bProvExprs = appendToTailOfList(bProvExprs, expr);
+            bProvDefs = appendToTailOfList(bProvDefs, a);
+        }
+        else if(isPrefix(a->attrName, "ProvW_")
+                || isPrefix(a->attrName, "provw_")
+                || isPrefix(a->attrName, "prov_w_"))
+        {
+            provWExprs = appendToTailOfList(provWExprs, expr);
+            provWDefs = appendToTailOfList(provWDefs, a);
+        }
+        else if(isPrefix(a->attrName, "IG_"))
+        {
+            dgExprs = appendToTailOfList(dgExprs, expr);
+            dgDefs = appendToTailOfList(dgDefs, a);
+        }
+        else if(streq(a->attrName, TOTAL_IG))
+        {
+            totalDGExprs = appendToTailOfList(totalDGExprs, expr);
+            totalDGDefs = appendToTailOfList(totalDGDefs, a);
+        }
+        else if(streq(a->attrName, "price")
+                || streq(a->attrName, "base_price")
+                || streq(a->attrName, "posted_price")
+                || streq(a->attrName, "ps")
+                || streq(a->attrName, "p_s")
+                || streq(a->attrName, "b_price"))
+        {
+            postedPriceExprs = appendToTailOfList(postedPriceExprs, expr);
+            postedPriceDefs = appendToTailOfList(postedPriceDefs, a);
+        }
+        else if(isPrefix(a->attrName, PRICE_PREFIX))
+        {
+            attrPriceExprs = appendToTailOfList(attrPriceExprs, expr);
+            attrPriceDefs = appendToTailOfList(attrPriceDefs, a);
+        }
+        else if(streq(a->attrName, TOTAL_PRICE))
+        {
+            totalPriceExprs = appendToTailOfList(totalPriceExprs, expr);
+            totalPriceDefs = appendToTailOfList(totalPriceDefs, a);
+        }
+        else
+        {
+            /*
+             * Normal query output attributes.
+             *
+             * Example:
+             *      year, county, quality
+             */
+            qExprs = appendToTailOfList(qExprs, expr);
+            qDefs = appendToTailOfList(qDefs, a);
+        }
+
+        reorderPos++;
+    }
+
+    List *allDGExprs = CONCAT_LISTS(dgExprs, totalDGExprs);
+    List *allDGDefs = CONCAT_LISTS(dgDefs, totalDGDefs);
+
+    List *allPriceExprs = CONCAT_LISTS(postedPriceExprs,
+            CONCAT_LISTS(attrPriceExprs, totalPriceExprs));
+
+    List *allPriceDefs = CONCAT_LISTS(postedPriceDefs,
+            CONCAT_LISTS(attrPriceDefs, totalPriceDefs));
+
+    priceProj->projExprs =
+            CONCAT_LISTS(qExprs,
+            CONCAT_LISTS(aProvExprs,
+            CONCAT_LISTS(bProvExprs,
+            CONCAT_LISTS(provWExprs,
+            CONCAT_LISTS(allDGExprs, allPriceExprs)))));
+
+    priceProj->op.schema->attrDefs =
+            CONCAT_LISTS(qDefs,
+            CONCAT_LISTS(aProvDefs,
+            CONCAT_LISTS(bProvDefs,
+            CONCAT_LISTS(provWDefs,
+            CONCAT_LISTS(allDGDefs, allPriceDefs)))));
+
+    addChildOperator((QueryOperator *) priceProj, (QueryOperator *) cleanProj);
+    switchSubtrees((QueryOperator *) cleanProj, (QueryOperator *) priceProj);
+
+    return priceProj;
+}
+
+static boolean
+igIsConvertedOutputAttr(char *attrName)
+{
+    /*
+     * Keep all final IG columns and Total_IG in the output.
+     * This includes names such as:
+     *
+     *      IG_right_gdays_integ
+     *      IG_left_quality_integ
+     *      Total_IG
+     *
+     * Even though some IG columns contain "_integ", they are final
+     * output DG/IG columns, not temporary helper columns.
+     */
+    if(isPrefix(attrName, "IG_") || streq(attrName, "Total_IG"))
+        return FALSE;
+
+    /*
+     * Remove internal converted/helper columns.
+     */
+    return isPrefix(attrName, "ig_conv_left_")
+        || isPrefix(attrName, "ig_conv_right_")
+        || isPrefix(attrName, HAMMING_PREFIX)
+        || isPrefix(attrName, VALUE_IG)
+        || isSubstr(attrName, INTEG_SUFFIX);
+}
+
+static Node *
+igMakeFloatConstInt(int v)
+{
+    return (Node *) createCastExpr((Node *) createConstInt(v), DT_FLOAT);
+}
+
+static Node *
+igMakeSumOrSingle(List *exprs)
+{
+    if(exprs == NIL || LIST_LENGTH(exprs) == 0)
+        return igMakeFloatConstInt(0);
+
+    if(LIST_LENGTH(exprs) == 1)
+        return (Node *) copyObject(getHeadOfListP(exprs));
+
+    return (Node *) createOpExpr(OPNAME_ADD, exprs);
+}
+
+/*
+ * Gets posted tuple price pi.
+ *
+ * Priority:
+ *      1. price
+ *      2. base_price
+ *      3. posted_price
+ *      4. DEFAULT_TUPLE_PRICE
+ */
+static Node *
+igGetPostedPriceExpr(ProjectionOperator *cleanProj)
+{
+    int pos = 0;
+
+    FOREACH(AttributeDef, a, cleanProj->op.schema->attrDefs)
+    {
+        if(streq(a->attrName, "price")
+                || streq(a->attrName, "base_price")
+                || streq(a->attrName, "posted_price")
+                || streq(a->attrName, "ps")
+                || streq(a->attrName, "p_s")
+                || streq(a->attrName, "b_price"))
+        {
+            return (Node *) createFullAttrReference(
+                    a->attrName,
+                    0,
+                    pos,
+                    0,
+                    a->dataType);
+        }
+
+        pos++;
+    }
+
+    return (Node *) createConstInt(DEFAULT_TUPLE_PRICE);
+}
+
 static QueryOperator *
 rewriteIG_Projection (ProjectionOperator *op)
 {
@@ -2371,6 +2763,151 @@ rewriteIG_Projection (ProjectionOperator *op)
 	FOREACH(AttributeDef, a, op->op.schema->attrDefs)
 		newAttrNames = appendToTailOfList(newAttrNames, a->attrName);
 
+	/*
+	 * Add Figure-1-style provenance columns before the DG columns.
+	 *
+	 * Final order before pricing becomes:
+	 *
+	 *      Q output attributes
+	 *      left/buyer provenance attributes
+	 *      right/seller provenance attributes
+	 *      ProvW attributes
+	 *      DG attributes
+	 *
+	 * This is not hard-coded for AQI. It uses:
+	 *      attrL       = left table attributes, i.e., buyer table a
+	 *      attrR       = right table attributes, i.e., seller table b
+	 *      joinAttrs   = join attributes to avoid repeating year/county
+	 *      child       = rewritten join child containing the attributes
+	 */
+	List *provWNames = NIL;
+
+	/*
+	 * 1. Buyer-side provenance.
+	 *
+	 * For the running example this gives:
+	 *      a_dwaqi, a_maqi, a_quality
+	 *
+	 * We skip join attributes such as year/county because they are already
+	 * shown in the query output.
+	 */
+	FOREACH(AttributeDef, la, attrL)
+	{
+	    if(!isPrefix(la->attrName, IG_PREFIX)
+	            && !isSuffix(la->attrName, ANNO_SUFFIX)
+	            && searchArList(joinAttrs, la->attrName) == 0)
+	    {
+	        int lpos = getAttrPos((QueryOperator *) child, la->attrName);
+
+	        if(lpos >= 0)
+	        {
+	            AttributeReference *lar = createFullAttrReference(
+	                    la->attrName,
+	                    0,
+	                    lpos,
+	                    0,
+	                    la->dataType);
+
+	            newProjExprWithCaseWhen = appendToTailOfList(
+	                    newProjExprWithCaseWhen,
+	                    lar);
+
+	            newAttrNames = appendToTailOfList(
+	                    newAttrNames,
+	                    CONCAT_STRINGS("a_", la->attrName));
+	        }
+	    }
+	}
+
+	/*
+	 * 2. Seller-side provenance.
+	 *
+	 * Only keep right-side attributes that actually have a right-side IG column.
+	 * This captures attributes such as b.gdays when they are used in CASE WHEN,
+	 * but avoids repeating regular inner-join attributes such as b.year/b.county.
+	 */
+	FOREACH(AttributeDef, ra, attrR)
+	{
+	    if(!isPrefix(ra->attrName, IG_PREFIX)
+	            && !isSuffix(ra->attrName, ANNO_SUFFIX)
+	            && searchArList(joinAttrs, ra->attrName) == 0)
+	    {
+	        char *rightIGName = CONCAT_STRINGS(IG_PREFIX, IG_RIGHT);
+	        rightIGName = CONCAT_STRINGS(rightIGName, ra->attrName);
+
+	        if(getAttrPos((QueryOperator *) child, rightIGName) >= 0)
+	        {
+	            int rpos = getAttrPos((QueryOperator *) child, ra->attrName);
+
+	            if(rpos >= 0)
+	            {
+	                AttributeReference *rar = createFullAttrReference(
+	                        ra->attrName,
+	                        0,
+	                        rpos,
+	                        0,
+	                        ra->dataType);
+
+	                newProjExprWithCaseWhen = appendToTailOfList(
+	                        newProjExprWithCaseWhen,
+	                        rar);
+
+	                newAttrNames = appendToTailOfList(
+	                        newAttrNames,
+	                        CONCAT_STRINGS("b_", ra->attrName));
+	            }
+	        }
+	    }
+	}
+
+	/*
+	 * 3. ProvW columns.
+	 *
+	 * For every left-side IG attribute, add a value-provenance display column.
+	 *
+	 * For the running example:
+	 *      IG_left_quality / IG_left_quality_integ
+	 *
+	 * gives:
+	 *      ProvW_quality
+	 *
+	 * The expression stores the buyer-side source value. If later you also
+	 * carry tuple ids a1, a2, ..., then this can be replaced by a textual
+	 * provenance id such as a_i.quality.
+	 */
+	FOREACH(AttributeDef, la, attrL)
+	{
+	    if(isPrefix(la->attrName, IG_PREFIX))
+	    {
+	        char *provAttr = replaceSubstr(la->attrName, IG_PREFIX, "");
+	        provAttr = replaceSubstr(provAttr, IG_LEFT, "");
+	        provAttr = replaceSubstr(provAttr, INTEG_SUFFIX, "");
+
+	        if(getAttrPos((QueryOperator *) child, provAttr) >= 0
+	                && searchListString(provWNames, provAttr) == FALSE)
+	        {
+	            AttributeDef *origDef = getAttrDefByName((QueryOperator *) child, provAttr);
+
+	            AttributeReference *provWAr = createFullAttrReference(
+	                    provAttr,
+	                    0,
+	                    getAttrPos((QueryOperator *) child, provAttr),
+	                    0,
+	                    origDef->dataType);
+
+	            newProjExprWithCaseWhen = appendToTailOfList(
+	                    newProjExprWithCaseWhen,
+	                    provWAr);
+
+	            newAttrNames = appendToTailOfList(
+	                    newAttrNames,
+	                    CONCAT_STRINGS("ProvW_", provAttr));
+
+	            provWNames = appendToTailOfList(provWNames, provAttr);
+	        }
+	    }
+	}
+
     FOREACH(AttributeDef, a, child->schema->attrDefs)
     {
     	if(a->dataType == DT_BIT10)
@@ -2635,8 +3172,23 @@ rewriteIG_Projection (ProjectionOperator *op)
 		addChildOperator((QueryOperator *) cleanProj, (QueryOperator *) sumrows);
 		switchSubtrees((QueryOperator *) sumrows, (QueryOperator *) cleanProj);
 
-		INFO_OP_LOG("Rewritten Operator tree for patterns", (QueryOperator *) sumrows);
-		return (QueryOperator *) cleanProj;
+		/*
+		 * Preserve the original query output attributes.
+		 * This lets rewriteIG_Pricing distinguish:
+		 *
+		 *      Q output attributes
+		 *      provenance attributes
+		 *      DG attributes
+		 *      price attributes
+		 *
+		 * without hard-coding names such as year, county, quality.
+		 */
+		SET_STRING_PROP(cleanProj, IG_INPUT_DEFS_PROP, copyObject(op->op.schema->attrDefs));
+
+		ProjectionOperator *priceProj = rewriteIG_Pricing(cleanProj);
+
+		INFO_OP_LOG("Rewritten Operator tree with prices", (QueryOperator *) priceProj);
+		return (QueryOperator *) priceProj;
 	}
 	else
 	{
@@ -3022,7 +3574,9 @@ rewriteIG_TableAccess(TableAccessOperator *op)
 
 	//getting inputs from case when expression
 	List *caseWhenAttrs = NIL;
+	List *caseCondAttrs = NIL;
 	List *thenElseAttrs = NIL;
+
 	FOREACH(AttributeReference, ar, input_attrs)
 	{
 		if(isA(ar, CaseExpr))
@@ -3041,8 +3595,9 @@ rewriteIG_TableAccess(TableAccessOperator *op)
 						{
 							if(isA(arg, AttributeReference))
 							{
-								AttributeReference *ar = (AttributeReference *) arg;
-								caseWhenAttrs = appendToTailOfList(caseWhenAttrs, ar);
+							    AttributeReference *ar = (AttributeReference *) arg;
+							    caseWhenAttrs = appendToTailOfList(caseWhenAttrs, ar);
+							    caseCondAttrs = appendToTailOfList(caseCondAttrs, ar);
 							}
 
 							if(isA(arg, IsNullExpr))
@@ -3078,6 +3633,14 @@ rewriteIG_TableAccess(TableAccessOperator *op)
     	{
     		ar->name = replaceSubstr(ar->name,"1","");
     	}
+	}
+
+	FOREACH(AttributeReference, ar, caseCondAttrs)
+	{
+	    if(isSuffix(ar->name, "1"))
+	    {
+	        ar->name = replaceSubstr(ar->name, "1", "");
+	    }
 	}
 
 	int pos = searchCasePosinArList(input_attrs);
@@ -3232,6 +3795,27 @@ rewriteIG_TableAccess(TableAccessOperator *op)
 				newProjExpr = appendToTailOfList(newProjExpr, ar);
 				newProjNames = appendToTailOfList(newProjNames, ar->name);
 			}
+		}
+
+		/*
+		 * BUG FIX:
+		 * Add right-side attributes that occur only inside CASE WHEN conditions.
+		 *
+		 * Example:
+		 *      CASE WHEN (... b.gdays <= 70) THEN ... ELSE ...
+		 *
+		 * b.gdays is not in the SELECT list, but it affects the output quality.
+		 * Therefore it must be captured as a right-side DG/provenance attribute.
+		 */
+		FOREACH(AttributeReference, ar, caseCondAttrs)
+		{
+		    if(ar->attrPosition >= left_len
+		            && searchArList(joinattrs, ar->name) == 0
+		            && searchArList(newProjExpr, ar->name) == 0)
+		    {
+		        newProjExpr = appendToTailOfList(newProjExpr, ar);
+		        newProjNames = appendToTailOfList(newProjNames, ar->name);
+		    }
 		}
 
 		//adding case attributes to input here, NOTE: We only need then and else attributes here
