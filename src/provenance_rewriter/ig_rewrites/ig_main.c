@@ -1021,166 +1021,334 @@ rewriteIG_HammingFunctions (ProjectionOperator *newProj)
 	return hammingvalue_op;
 }
 
-static AggregationOperator *
-rewriteIG_PatternGeneration (ProjectionOperator *sumrows)
+//static AggregationOperator *
+//rewriteIG_PatternGeneration (ProjectionOperator *sumrows)
+//static AggregationOperator *
+//rewriteIG_PatternGeneration(ProjectionOperator *priceProj)
+//{
+//
+//	ASSERT(OP_LCHILD(priceProj));
+//	DEBUG_LOG("REWRITE-IG - Pattern Generation");
+//	DEBUG_LOG("Operator tree \n%s", nodeToString(priceProj));
+//
+//	List *Laggrs = NIL;;
+//	List *Raggrs = NIL;
+//	List *LaggrsNames = NIL;
+//	List *RaggrsNames = NIL;
+//
+//	FOREACH(AttributeDef, n, attrL)
+//	{
+//		if(!isPrefix(n->attrName, IG_PREFIX))
+//		{
+//			if(!isSuffix(n->attrName, ANNO_SUFFIX))
+//			{
+//				Laggrs = appendToTailOfList(Laggrs, n);
+//				LaggrsNames = appendToTailOfList(LaggrsNames, n->attrName);
+//			}
+//		}
+//	}
+//
+//	FOREACH(AttributeDef, n, attrR)
+//	{
+//		if(!isPrefix(n->attrName, IG_PREFIX))
+//		{
+//			if(!isSuffix(n->attrName, ANNO_SUFFIX))
+//			{
+//				Raggrs = appendToTailOfList(Raggrs, n);
+//				RaggrsNames = appendToTailOfList(RaggrsNames, n->attrName);
+//			}
+//		}
+//	}
+//
+//	List *cleanExprs = NIL;
+//	List *cleanNames = NIL;
+//
+//	//Creating Left Case when statements
+//	FOREACH(AttributeDef, L, Laggrs)
+//	{
+//
+//		if(searchListString(RaggrsNames, L->attrName))
+//		{
+//			FOREACH(AttributeDef, R, Raggrs)
+//			{
+//				char *LAttrName = L->attrName;
+//
+//				if(streq(L->attrName, R->attrName))
+//				{
+//					AttributeReference * arL = createFullAttrReference(LAttrName, 0,
+//							getAttrPos((QueryOperator *) sumrows, LAttrName),0, L->dataType);
+//
+//					//TODO: search attributes from shared
+//					if(arL->attrPosition == -1)
+//					{
+//						LAttrName = CONCAT_STRINGS(L->attrName,gprom_itoa(1));
+//						arL->name = LAttrName;
+//						arL->attrPosition = getAttrPos((QueryOperator *) sumrows, LAttrName);
+//
+//					}
+//
+//
+//					if(arL->attrPosition != -1)
+//					{
+//						cleanExprs = appendToTailOfList(cleanExprs, arL);
+//						cleanNames = appendToTailOfList(cleanNames, CONCAT_STRINGS(INDEX, LAttrName));
+//					}
+//				}
+//
+//			}
+//		}
+//		else
+//		{
+//			AttributeReference * arL = createFullAttrReference(L->attrName, 0,
+//					getAttrPos((QueryOperator *) sumrows, L->attrName),0, L->dataType);
+//			cleanExprs = appendToTailOfList(cleanExprs, arL);
+//			cleanNames = appendToTailOfList(cleanNames, CONCAT_STRINGS(INDEX, L->attrName));
+//		}
+//	}
+//
+//
+//	FOREACH(AttributeDef, R, Raggrs)
+//	{
+//		if(!searchListString(LaggrsNames, R->attrName))
+//		{
+//			AttributeReference * arR = createFullAttrReference(R->attrName, 0,
+//					getAttrPos((QueryOperator *) sumrows, R->attrName),0, R->dataType);
+//
+//			cleanExprs = appendToTailOfList(cleanExprs, arR);
+//			cleanNames = appendToTailOfList(cleanNames, CONCAT_STRINGS(INDEX, R->attrName));
+//
+//		}
+//	}
+//
+//	// add ig columns and rowIG
+//	FOREACH(AttributeReference, n, sumrows->projExprs)
+//	{
+//		if(isPrefix(n->name, VALUE_IG))
+//		{
+//			cleanExprs = appendToTailOfList(cleanExprs,n);
+//			cleanNames = appendToTailOfList(cleanNames, n->name);
+//		}
+//	}
+//
+//	FOREACH(AttributeDef, a, sumrows->op.schema->attrDefs)
+//	{
+//		if(streq(a->attrName,TOTAL_IG))
+//		{
+//			AttributeReference *ar = createFullAttrReference(a->attrName, 0,
+//					getAttrPos((QueryOperator *) sumrows, a->attrName), 0, a->dataType);
+//
+//			cleanExprs = appendToTailOfList(cleanExprs,ar);
+//			cleanNames = appendToTailOfList(cleanNames, ar->name);
+//		}
+//	}
+//
+//	ProjectionOperator *clean1 = createProjectionOp(cleanExprs, NULL, NIL, cleanNames);
+//
+//	List *cleanExprs1 = NIL;
+//	List *cleanNames1 = NIL;
+//	List *origAttrs = NIL;
+//
+//	FOREACH(AttributeDef, adef, sumrows->op.schema->attrDefs)
+//	{
+//		if(!isPrefix(adef->attrName, "hamming") && !isPrefix(adef->attrName, "value")
+//				&& !isPrefix(adef->attrName, "Total"))
+//		{
+//			AttributeReference *ar = getAttrRefByName((QueryOperator *) sumrows, adef->attrName);
+//			origAttrs = appendToTailOfList(origAttrs, ar);
+//		}
+//	}
+//
+//	//cleaning up extra attributes from clean
+//	FOREACH(AttributeReference, ar , clean1->projExprs)
+//	{
+//		if(!isPrefix(ar->name, "value") && !isPrefix(ar->name, "Total"))
+//		{
+//			FOREACH(AttributeReference, oar, origAttrs)
+//			{
+//				if(streq(ar->name, oar->name))
+//				{
+//					cleanExprs1 = appendToTailOfList(cleanExprs1, ar);
+//					cleanNames1 = appendToTailOfList(cleanNames1, CONCAT_STRINGS(INDEX, ar->name));
+//				}
+//			}
+//		}
+//		else
+//		{
+//			cleanExprs1 = appendToTailOfList(cleanExprs1, ar);
+//			cleanNames1 = appendToTailOfList(cleanNames1, ar->name);
+//		}
+//	}
+//
+//	ProjectionOperator *clean = createProjectionOp(cleanExprs1, NULL, NIL, cleanNames1);
+//	addChildOperator((QueryOperator *) clean, (QueryOperator *) sumrows);
+//	switchSubtrees((QueryOperator *) sumrows, (QueryOperator *) clean);
+
+
+//static AggregationOperator *
+//rewriteIG_PatternGeneration(ProjectionOperator *priceProj)
+
+// return QueryOperator now becasue corr r^2 was commented out
+static QueryOperator *
+rewriteIG_PatternGeneration(ProjectionOperator *priceProj)
 {
+    ASSERT(OP_LCHILD(priceProj));
 
-	ASSERT(OP_LCHILD(sumrows));
-	DEBUG_LOG("REWRITE-IG - Pattern Generation");
-	DEBUG_LOG("Operator tree \n%s", nodeToString(sumrows));
+    DEBUG_LOG("REWRITE-IG - Pattern Generation");
+    DEBUG_LOG("Operator tree \n%s", nodeToString(priceProj));
 
-	List *Laggrs = NIL;;
-	List *Raggrs = NIL;
-	List *LaggrsNames = NIL;
-	List *RaggrsNames = NIL;
+    /*
+     * Keep an independent copy of Q_price.
+     *
+     * The main priceProj branch is rewritten into the pattern CUBE.
+     * This copy is used to compute the global normalization values:
+     *
+     *      total adjusted price
+     *      total number of provenance tuples
+     */
 
-	FOREACH(AttributeDef, n, attrL)
-	{
-		if(!isPrefix(n->attrName, IG_PREFIX))
-		{
-			if(!isSuffix(n->attrName, ANNO_SUFFIX))
-			{
-				Laggrs = appendToTailOfList(Laggrs, n);
-				LaggrsNames = appendToTailOfList(LaggrsNames, n->attrName);
-			}
-		}
-	}
+    /*
+     * test
+     * the
+     * code
+     *
+     */
+    QueryOperator *totalsInput =
+            (QueryOperator *) copyObject((QueryOperator *) priceProj);
+    /*
+     * Build the input relation for pattern generation from Q_price.
+     *
+     * Pattern dimensions:
+     *
+     *      original Q output
+     *      buyer provenance attributes
+     *      seller provenance attributes
+     *
+     * Not pattern dimensions:
+     *
+     *      ProvW_*
+     *      IG_*
+     *      Total_IG
+     *      price_*
+     *      Total_Price
+     *
+     * We keep IG_* and Total_Price in the relation because they are
+     * needed later for correlation and impact computation.
+     */
 
-	FOREACH(AttributeDef, n, attrR)
-	{
-		if(!isPrefix(n->attrName, IG_PREFIX))
-		{
-			if(!isSuffix(n->attrName, ANNO_SUFFIX))
-			{
-				Raggrs = appendToTailOfList(Raggrs, n);
-				RaggrsNames = appendToTailOfList(RaggrsNames, n->attrName);
-			}
-		}
-	}
+    List *cleanExprs = NIL;
+    List *cleanNames = NIL;
 
-	List *cleanExprs = NIL;
-	List *cleanNames = NIL;
+    int cleanPos = 0;
 
-	//Creating Left Case when statements
-	FOREACH(AttributeDef, L, Laggrs)
-	{
+    FOREACH(AttributeDef, a, priceProj->op.schema->attrDefs)
+    {
+        boolean isProvW =
+                isPrefix(a->attrName, "ProvW_")
+                || isPrefix(a->attrName, "provw_")
+                || isPrefix(a->attrName, "prov_w_");
 
-		if(searchListString(RaggrsNames, L->attrName))
-		{
-			FOREACH(AttributeDef, R, Raggrs)
-			{
-				char *LAttrName = L->attrName;
+        boolean isDG =
+                isPrefix(a->attrName, "IG_")
+                || streq(a->attrName, TOTAL_IG);
 
-				if(streq(L->attrName, R->attrName))
-				{
-					AttributeReference * arL = createFullAttrReference(LAttrName, 0,
-							getAttrPos((QueryOperator *) sumrows, LAttrName),0, L->dataType);
+        boolean isAttrPrice =
+                isPrefix(a->attrName, PRICE_PREFIX);
 
-					//TODO: search attributes from shared
-					if(arL->attrPosition == -1)
-					{
-						LAttrName = CONCAT_STRINGS(L->attrName,gprom_itoa(1));
-						arL->name = LAttrName;
-						arL->attrPosition = getAttrPos((QueryOperator *) sumrows, LAttrName);
+        boolean isTotalPrice =
+                streq(a->attrName, TOTAL_PRICE);
 
-					}
+        boolean isPostedPrice =
+                streq(a->attrName, "price")
+                || streq(a->attrName, "base_price")
+                || streq(a->attrName, "posted_price")
+                || streq(a->attrName, "ps")
+                || streq(a->attrName, "p_s")
+                || streq(a->attrName, "b_price");
 
+        AttributeReference *ar = createFullAttrReference(
+                a->attrName,
+                0,
+                cleanPos,
+                0,
+                a->dataType);
 
-					if(arL->attrPosition != -1)
-					{
-						cleanExprs = appendToTailOfList(cleanExprs, arL);
-						cleanNames = appendToTailOfList(cleanNames, CONCAT_STRINGS(INDEX, LAttrName));
-					}
-				}
+        /*
+         * Pattern dimensions.
+         *
+         * Everything that is not an annotation or price measure
+         * becomes a CUBE dimension.
+         *
+         * Examples:
+         *
+         *      year
+         *      county
+         *      quality
+         *      a_dayswaqi
+         *      a_maqi
+         *      a_quality
+         *      b_gdays
+         *
+         * Rename dimensions with i_ because the existing pattern code
+         * identifies CUBE dimensions through the INDEX prefix.
+         */
+        if(!isProvW
+                && !isDG
+                && !isAttrPrice
+                && !isTotalPrice
+                && !isPostedPrice)
+        {
+            cleanExprs = appendToTailOfList(cleanExprs, ar);
 
-			}
-		}
-		else
-		{
-			AttributeReference * arL = createFullAttrReference(L->attrName, 0,
-					getAttrPos((QueryOperator *) sumrows, L->attrName),0, L->dataType);
-			cleanExprs = appendToTailOfList(cleanExprs, arL);
-			cleanNames = appendToTailOfList(cleanNames, CONCAT_STRINGS(INDEX, L->attrName));
-		}
-	}
+            cleanNames = appendToTailOfList(
+                    cleanNames,
+                    CONCAT_STRINGS(INDEX, a->attrName));
+        }
 
+        /*
+         * Keep attribute-level DG values for correlation analysis.
+         *
+         * These are not CUBE dimensions.
+         */
+        else if(isPrefix(a->attrName, "IG_"))
+        {
+            cleanExprs = appendToTailOfList(cleanExprs, ar);
+            cleanNames = appendToTailOfList(
+                    cleanNames,
+                    strdup(a->attrName));
+        }
 
-	FOREACH(AttributeDef, R, Raggrs)
-	{
-		if(!searchListString(LaggrsNames, R->attrName))
-		{
-			AttributeReference * arR = createFullAttrReference(R->attrName, 0,
-					getAttrPos((QueryOperator *) sumrows, R->attrName),0, R->dataType);
+        /*
+         * Keep the adjusted tuple price.
+         *
+         * Pattern impact is computed from this column.
+         */
+        else if(isTotalPrice)
+        {
+            cleanExprs = appendToTailOfList(cleanExprs, ar);
+            cleanNames = appendToTailOfList(
+                    cleanNames,
+                    strdup(a->attrName));
+        }
 
-			cleanExprs = appendToTailOfList(cleanExprs, arR);
-			cleanNames = appendToTailOfList(cleanNames, CONCAT_STRINGS(INDEX, R->attrName));
+        /*
+         * Keep the seller's posted price when available.
+         * We will use this later for the ps column in Figure 1.
+         */
+        else if(isPostedPrice)
+        {
+            cleanExprs = appendToTailOfList(cleanExprs, ar);
+            cleanNames = appendToTailOfList(
+                    cleanNames,
+                    strdup(a->attrName));
+        }
 
-		}
-	}
+        cleanPos++;
+    }
 
-	// add ig columns and rowIG
-	FOREACH(AttributeReference, n, sumrows->projExprs)
-	{
-		if(isPrefix(n->name, VALUE_IG))
-		{
-			cleanExprs = appendToTailOfList(cleanExprs,n);
-			cleanNames = appendToTailOfList(cleanNames, n->name);
-		}
-	}
+    ProjectionOperator *clean = createProjectionOp(cleanExprs, NULL, NIL, cleanNames);
 
-	FOREACH(AttributeDef, a, sumrows->op.schema->attrDefs)
-	{
-		if(streq(a->attrName,TOTAL_IG))
-		{
-			AttributeReference *ar = createFullAttrReference(a->attrName, 0,
-					getAttrPos((QueryOperator *) sumrows, a->attrName), 0, a->dataType);
-
-			cleanExprs = appendToTailOfList(cleanExprs,ar);
-			cleanNames = appendToTailOfList(cleanNames, ar->name);
-		}
-	}
-
-	ProjectionOperator *clean1 = createProjectionOp(cleanExprs, NULL, NIL, cleanNames);
-
-	List *cleanExprs1 = NIL;
-	List *cleanNames1 = NIL;
-	List *origAttrs = NIL;
-
-	FOREACH(AttributeDef, adef, sumrows->op.schema->attrDefs)
-	{
-		if(!isPrefix(adef->attrName, "hamming") && !isPrefix(adef->attrName, "value")
-				&& !isPrefix(adef->attrName, "Total"))
-		{
-			AttributeReference *ar = getAttrRefByName((QueryOperator *) sumrows, adef->attrName);
-			origAttrs = appendToTailOfList(origAttrs, ar);
-		}
-	}
-
-	//cleaning up extra attributes from clean
-	FOREACH(AttributeReference, ar , clean1->projExprs)
-	{
-		if(!isPrefix(ar->name, "value") && !isPrefix(ar->name, "Total"))
-		{
-			FOREACH(AttributeReference, oar, origAttrs)
-			{
-				if(streq(ar->name, oar->name))
-				{
-					cleanExprs1 = appendToTailOfList(cleanExprs1, ar);
-					cleanNames1 = appendToTailOfList(cleanNames1, CONCAT_STRINGS(INDEX, ar->name));
-				}
-			}
-		}
-		else
-		{
-			cleanExprs1 = appendToTailOfList(cleanExprs1, ar);
-			cleanNames1 = appendToTailOfList(cleanNames1, ar->name);
-		}
-	}
-
-	ProjectionOperator *clean = createProjectionOp(cleanExprs1, NULL, NIL, cleanNames1);
-	addChildOperator((QueryOperator *) clean, (QueryOperator *) sumrows);
-	switchSubtrees((QueryOperator *) sumrows, (QueryOperator *) clean);
-
+    addChildOperator((QueryOperator *) clean,(QueryOperator *) priceProj);
+    switchSubtrees((QueryOperator *) priceProj,(QueryOperator *) clean);
 
 	List *projNames = NIL;
 	List *groupBy = NIL;
@@ -1189,17 +1357,39 @@ rewriteIG_PatternGeneration (ProjectionOperator *sumrows)
 
 	FOREACH(AttributeDef, n, clean->op.schema->attrDefs)
 	{
-		//this one makes pattern_IG
-		if(streq(n->attrName, TOTAL_IG))
-		{
-			AttributeReference *ar = createFullAttrReference(n->attrName, 0,
-					   				 getAttrPos((QueryOperator *) clean, n->attrName), 0, n->dataType);
-			sum = createFunctionCall("SUM", singleton(ar));
-			sum->isAgg = TRUE;
+	    /*
+	     * Internally we still call this pattern_IG for now so the rest
+	     * of the existing explanation code continues to work.
+	     *
+	     * Semantically, however, it is now the total adjusted price
+	     * covered by the pattern:
+	     *
+	     *      SUM(Total_Price)
+	     *
+	     * Later this becomes the numerator of imp.
+	     */
+	    if(streq(n->attrName, TOTAL_PRICE))
+	    {
+	        AttributeReference *ar = createFullAttrReference(
+	                n->attrName,
+	                0,
+	                getAttrPos((QueryOperator *) clean, n->attrName),
+	                0,
+	                n->dataType);
 
-			aggrs = appendToTailOfList(aggrs,sum);
-			projNames = appendToTailOfList(projNames, strdup(PATTERN_IG));
-		}
+	        sum = createFunctionCall("SUM", singleton(ar));
+	        sum->isAgg = TRUE;
+
+	        aggrs = appendToTailOfList(aggrs, sum);
+
+	        /*
+	         * Keep the old internal name temporarily because the existing
+	         * top-k and analysis code refers to PATTERN_IG.
+	         */
+	        projNames = appendToTailOfList(
+	                projNames,
+	                strdup(PATTERN_IG));
+	    }
 	}
 
 	// coverage
@@ -1344,6 +1534,20 @@ rewriteIG_PatternGeneration (ProjectionOperator *sumrows)
 	Node *subcond = (Node *) createOpExpr(OPNAME_AND, LIST_MAKE(cov1,info5));
 
 	//coverage > 1 OR (coverage = 1 AND informativeness = 5)
+	//	Error here
+	//	the condition is OR
+	//	be careful
+	//
+	//	example this:
+	//
+	//	patternIG > 0
+	//	AND
+	//	(
+	//	    coverage > 1
+	//	    OR
+	//	    (coverage = 1 AND informativeness = num_i)
+	//	)
+
 	Node *cond = (Node *) createOpExpr(OPNAME_OR, LIST_MAKE(covgt1,subcond));
 
 	//creating patternIG > 0
@@ -1391,53 +1595,335 @@ rewriteIG_PatternGeneration (ProjectionOperator *sumrows)
 
 	INFO_OP_LOG("Patterns with Only Placeholders: ", topKPattOnlyConst);
 
+	/*
+	 * Compute the global values required by Definitions 6--8:
+	 *
+	 *      total_price_all = SUM(Total_Price)
+	 *      total_prov_all  = COUNT(*)
+	 *
+	 * These are computed from Q_price, not from the generated patterns.
+	 */
+	char *totalPriceAllName = "total_price_all";
+	char *totalProvAllName = "total_prov_all";
 
+	List *totalAggrs = NIL;
+	List *totalAggrNames = NIL;
+
+	/*
+	 * SUM(Total_Price)
+	 */
+	AttributeReference *allPriceAr =
+	        getAttrRefByName(totalsInput, TOTAL_PRICE);
+
+	FunctionCall *sumAllPrice =
+	        createFunctionCall("SUM", singleton(allPriceAr));
+
+	sumAllPrice->isAgg = TRUE;
+
+	totalAggrs =
+	        appendToTailOfList(totalAggrs, sumAllPrice);
+
+	totalAggrNames =
+	        appendToTailOfList(totalAggrNames, totalPriceAllName);
+
+	/*
+	 * COUNT(*)
+	 */
+	FunctionCall *countAllProv =
+	        createFunctionCall(
+	                "COUNT",
+	                singleton(createConstInt(1)));
+
+	countAllProv->isAgg = TRUE;
+
+	totalAggrs =
+	        appendToTailOfList(totalAggrs, countAllProv);
+
+	totalAggrNames =
+	        appendToTailOfList(totalAggrNames, totalProvAllName);
+
+	AggregationOperator *totalsAggr =
+	        createAggregationOp(
+	                totalAggrs,
+	                NIL,
+	                totalsInput,
+	                NIL,
+	                totalAggrNames);
+
+	addParent(
+	        totalsInput,
+	        (QueryOperator *) totalsAggr);
+
+	/*
+	 * The values are used in floating-point divisions below.
+	 */
+	FOREACH(AttributeDef, n, totalsAggr->op.schema->attrDefs)
+	{
+	    n->dataType = DT_FLOAT;
+	}
+
+	/*
+	 * Attach the global totals to the patterns containing
+	 * constants and placeholders.
+	 */
+	QueryOperator *totalsForConstPlac =
+	        (QueryOperator *) copyObject(
+	                (QueryOperator *) totalsAggr);
+
+	List *constPlacInputs =
+	        LIST_MAKE(
+	                (QueryOperator *) topKPattConstPlac,
+	                totalsForConstPlac);
+
+	List *constPlacNames =
+	        CONCAT_LISTS(
+	                getAttrNames(topKPattConstPlac->op.schema),
+	                getAttrNames(totalsForConstPlac->schema));
+
+	QueryOperator *topKPattConstPlacWithTotals =
+	        (QueryOperator *) createJoinOp(
+	                JOIN_CROSS,
+	                NULL,
+	                constPlacInputs,
+	                NIL,
+	                constPlacNames);
+
+	makeAttrNamesUnique(topKPattConstPlacWithTotals);
+
+	addParent(
+	        (QueryOperator *) topKPattConstPlac,
+	        topKPattConstPlacWithTotals);
+
+	addParent(
+	        totalsForConstPlac,
+	        topKPattConstPlacWithTotals);
+
+	switchSubtrees(
+	        (QueryOperator *) topKPattConstPlac,
+	        topKPattConstPlacWithTotals);
+
+
+	/*
+	 * Attach the same global totals to the all-constant patterns.
+	 */
+	QueryOperator *totalsForOnlyConst =
+	        (QueryOperator *) copyObject(
+	                (QueryOperator *) totalsAggr);
+
+	List *onlyConstInputs =
+	        LIST_MAKE(
+	                (QueryOperator *) topKPattOnlyConst,
+	                totalsForOnlyConst);
+
+	List *onlyConstNames =
+	        CONCAT_LISTS(
+	                getAttrNames(topKPattOnlyConst->op.schema),
+	                getAttrNames(totalsForOnlyConst->schema));
+
+	QueryOperator *topKPattOnlyConstWithTotals =
+	        (QueryOperator *) createJoinOp(
+	                JOIN_CROSS,
+	                NULL,
+	                onlyConstInputs,
+	                NIL,
+	                onlyConstNames);
+
+	makeAttrNamesUnique(topKPattOnlyConstWithTotals);
+
+	addParent(
+	        (QueryOperator *) topKPattOnlyConst,
+	        topKPattOnlyConstWithTotals);
+
+	addParent(
+	        totalsForOnlyConst,
+	        topKPattOnlyConstWithTotals);
+
+	switchSubtrees(
+	        (QueryOperator *) topKPattOnlyConst,
+	        topKPattOnlyConstWithTotals);
+
+
+//	List *topKattr = NIL;
+//	List *topKattrNames = NIL;
+//	List *inputTopK = NIL;
+//	int topKpos = 0;
+//	//pattern_IG | informativeness | coverage
+//	FOREACH(AttributeDef, n, topKPattConstPlac->op.schema->attrDefs)
+//	{
+//		if((!streq(n->attrName, INFORMATIVENESS)) &&
+//		   (!streq(n->attrName, COVERAGE)) &&
+//		   (!streq(n->attrName, PATTERNIG)))
+//		{
+//		AttributeReference *ar = createFullAttrReference(n->attrName, 0,
+//						topKpos, 0, n->dataType);
+//		topKattr = appendToTailOfList(topKattr, ar);
+//		topKattrNames = appendToTailOfList(topKattrNames, n->attrName);
+//		topKpos = topKpos + 1;
+//		}
+//
+//		else if(streq(n->attrName, INFORMATIVENESS))
+//		{
+//			AttributeReference *ar = createFullAttrReference(n->attrName, 0,
+//						topKpos, 0, n->dataType);
+//			topKattr = appendToTailOfList(topKattr, ar);
+//			topKattrNames = appendToTailOfList(topKattrNames, n->attrName);
+//			inputTopK = appendToTailOfList(inputTopK, ar);
+//			topKpos = topKpos + 1;
+//		}
+//		else if(streq(n->attrName, COVERAGE))
+//		{
+//			AttributeReference *ar = createFullAttrReference(n->attrName, 0,
+//						topKpos, 0, n->dataType);
+//			topKattr = appendToTailOfList(topKattr, ar);
+//			topKattrNames = appendToTailOfList(topKattrNames, n->attrName);
+//			inputTopK = appendToTailOfList(inputTopK, ar);
+//			topKpos = topKpos + 1;
+//		}
+//		else if(streq(n->attrName, PATTERNIG))
+//		{
+//			AttributeReference *ar = createFullAttrReference(n->attrName, 0,
+//						topKpos, 0, n->dataType);
+//			topKattr = appendToTailOfList(topKattr, ar);
+//			topKattrNames = appendToTailOfList(topKattrNames, n->attrName);
+//			inputTopK = appendToTailOfList(inputTopK, ar);
+//			topKpos = topKpos + 1;
+//		}
+//	}
 
 	List *topKattr = NIL;
 	List *topKattrNames = NIL;
 	List *inputTopK = NIL;
 	int topKpos = 0;
-	//pattern_IG | informativeness | coverage
-	FOREACH(AttributeDef, n, topKPattConstPlac->op.schema->attrDefs)
-	{
-		if((!streq(n->attrName, INFORMATIVENESS)) &&
-		   (!streq(n->attrName, COVERAGE)) &&
-		   (!streq(n->attrName, PATTERNIG)))
-		{
-		AttributeReference *ar = createFullAttrReference(n->attrName, 0,
-						topKpos, 0, n->dataType);
-		topKattr = appendToTailOfList(topKattr, ar);
-		topKattrNames = appendToTailOfList(topKattrNames, n->attrName);
-		topKpos = topKpos + 1;
-		}
 
-		else if(streq(n->attrName, INFORMATIVENESS))
-		{
-			AttributeReference *ar = createFullAttrReference(n->attrName, 0,
-						topKpos, 0, n->dataType);
-			topKattr = appendToTailOfList(topKattr, ar);
-			topKattrNames = appendToTailOfList(topKattrNames, n->attrName);
-			inputTopK = appendToTailOfList(inputTopK, ar);
-			topKpos = topKpos + 1;
-		}
-		else if(streq(n->attrName, COVERAGE))
-		{
-			AttributeReference *ar = createFullAttrReference(n->attrName, 0,
-						topKpos, 0, n->dataType);
-			topKattr = appendToTailOfList(topKattr, ar);
-			topKattrNames = appendToTailOfList(topKattrNames, n->attrName);
-			inputTopK = appendToTailOfList(inputTopK, ar);
-			topKpos = topKpos + 1;
-		}
-		else if(streq(n->attrName, PATTERNIG))
-		{
-			AttributeReference *ar = createFullAttrReference(n->attrName, 0,
-						topKpos, 0, n->dataType);
-			topKattr = appendToTailOfList(topKattr, ar);
-			topKattrNames = appendToTailOfList(topKattrNames, n->attrName);
-			inputTopK = appendToTailOfList(inputTopK, ar);
-			topKpos = topKpos + 1;
-		}
+	/*
+	 * References to the global normalization values.
+	 */
+	AttributeReference *totalPriceAll =
+	        getAttrRefByName(
+	                topKPattConstPlacWithTotals,
+	                totalPriceAllName);
+
+	AttributeReference *totalProvAll =
+	        getAttrRefByName(
+	                topKPattConstPlacWithTotals,
+	                totalProvAllName);
+
+	/*
+	 * Build the normalized pattern relation.
+	 *
+	 * Internally the existing names are preserved for now:
+	 *
+	 *      pattern_IG       -> imp
+	 *      coverage         -> cov
+	 *      informativeness  -> info
+	 *
+	 * The final output projection renames them later.
+	 */
+	FOREACH(
+	        AttributeDef,
+	        n,
+	        topKPattConstPlacWithTotals->schema->attrDefs)
+	{
+	    /*
+	     * The global totals are used only to build the expressions.
+	     * Do not display them in the pattern result.
+	     */
+	    if(streq(n->attrName, totalPriceAllName)
+	            || streq(n->attrName, totalProvAllName))
+	    {
+	        topKpos++;
+	        continue;
+	    }
+
+	    AttributeReference *ar =
+	            createFullAttrReference(
+	                    n->attrName,
+	                    0,
+	                    topKpos,
+	                    0,
+	                    n->dataType);
+
+	    Node *outExpr = (Node *) ar;
+
+	    /*
+	     * Definition 8:
+	     *
+	     *      imp = pattern adjusted price
+	     *            / total adjusted price
+	     */
+	    if(streq(n->attrName, PATTERNIG))
+	    {
+	        outExpr = (Node *) createOpExpr(
+	                OPNAME_DIV,
+	                LIST_MAKE(
+	                    createCastExpr(
+	                            (Node *) ar,
+	                            DT_FLOAT),
+	                    createCastExpr(
+	                            copyObject(totalPriceAll),
+	                            DT_FLOAT)));
+
+	        inputTopK =
+	                appendToTailOfList(
+	                        inputTopK,
+	                        copyObject(outExpr));
+	    }
+
+	    /*
+	     * Definition 7:
+	     *
+	     *      cov = matching tuples / |Prov|
+	     */
+	    else if(streq(n->attrName, COVERAGE))
+	    {
+	        outExpr = (Node *) createOpExpr(
+	                OPNAME_DIV,
+	                LIST_MAKE(
+	                    createCastExpr(
+	                            (Node *) ar,
+	                            DT_FLOAT),
+	                    createCastExpr(
+	                            copyObject(totalProvAll),
+	                            DT_FLOAT)));
+
+	        inputTopK =
+	                appendToTailOfList(
+	                        inputTopK,
+	                        copyObject(outExpr));
+	    }
+
+	    /*
+	     * Definition 6:
+	     *
+	     *      info = constants / arity(pattern)
+	     */
+	    else if(streq(n->attrName, INFORMATIVENESS))
+	    {
+	        outExpr = (Node *) createOpExpr(
+	                OPNAME_DIV,
+	                LIST_MAKE(
+	                    createCastExpr(
+	                            (Node *) ar,
+	                            DT_FLOAT),
+	                    igMakeFloatConstInt(num_i)));
+
+	        inputTopK =
+	                appendToTailOfList(
+	                        inputTopK,
+	                        copyObject(outExpr));
+	    }
+
+	    topKattr =
+	            appendToTailOfList(
+	                    topKattr,
+	                    outExpr);
+
+	    topKattrNames =
+	            appendToTailOfList(
+	                    topKattrNames,
+	                    n->attrName);
+
+	    topKpos++;
 	}
 
 	//patternIG * coverage * informativeness
@@ -1459,8 +1945,14 @@ rewriteIG_PatternGeneration (ProjectionOperator *sumrows)
 	topKattrNames = appendToTailOfList(topKattrNames, FSCORETOPK);
 
 	//fscoreTopK
-	ProjectionOperator *fscoreTopKOp = createProjectionOp(topKattr,
-			(QueryOperator *) topKPattConstPlac, NIL, topKattrNames);
+//	ProjectionOperator *fscoreTopKOp = createProjectionOp(topKattr,
+//			(QueryOperator *) topKPattConstPlac, NIL, topKattrNames);
+	ProjectionOperator *fscoreTopKOp = createProjectionOp(
+	        topKattr,
+	        topKPattConstPlacWithTotals,
+	        NIL,
+	        topKattrNames);
+
 
 	addParent((QueryOperator *) topKPattConstPlac, (QueryOperator *) fscoreTopKOp);
 	switchSubtrees((QueryOperator *) topKPattConstPlac, (QueryOperator *) fscoreTopKOp);
@@ -1526,8 +2018,13 @@ rewriteIG_PatternGeneration (ProjectionOperator *sumrows)
 	//creating fscoreTopKOnlyCons
 
 	//fscoreTopKOnlyConst
-	ProjectionOperator *fscoreTopKOnlyConsOp = createProjectionOp(topKattr,
-			(QueryOperator *) topKPattOnlyConst, NIL, topKattrNames);
+//	ProjectionOperator *fscoreTopKOnlyConsOp = createProjectionOp(topKattr,
+//			(QueryOperator *) topKPattOnlyConst, NIL, topKattrNames);
+	ProjectionOperator *fscoreTopKOnlyConsOp = createProjectionOp(
+	        copyObject(topKattr),
+	        topKPattOnlyConstWithTotals,
+	        NIL,
+	        copyObject(topKattrNames));
 
 	addParent((QueryOperator *) topKPattOnlyConst, (QueryOperator *) fscoreTopKOnlyConsOp);
 	switchSubtrees((QueryOperator *) topKPattOnlyConst, (QueryOperator *) fscoreTopKOnlyConsOp);
@@ -1698,6 +2195,152 @@ rewriteIG_PatternGeneration (ProjectionOperator *sumrows)
 
 	switchSubtrees((QueryOperator *) limitPo, unionOp);
 
+	/*
+	 * The two branches above can together contain more than k rows.
+	 *
+	 * Apply one final global ordering and LIMIT so Q_pf contains
+	 * at most exactly k patterns overall.
+	 */
+
+	/*
+	 * Projection wrapper for ORDER BY.
+	 */
+	List *finalOrderExprs = NIL;
+	int finalOrderPos = 0;
+
+	FOREACH(AttributeDef, a, unionOp->schema->attrDefs)
+	{
+	    AttributeReference *ar =
+	            createFullAttrReference(
+	                    a->attrName,
+	                    0,
+	                    finalOrderPos,
+	                    0,
+	                    a->dataType);
+
+	    finalOrderExprs =
+	            appendToTailOfList(
+	                    finalOrderExprs,
+	                    ar);
+
+	    finalOrderPos++;
+	}
+
+	ProjectionOperator *finalOrderInput =
+	        createProjectionOp(
+	                finalOrderExprs,
+	                unionOp,
+	                NIL,
+	                getAttrNames(unionOp->schema));
+
+	addParent(
+	        unionOp,
+	        (QueryOperator *) finalOrderInput);
+
+	switchSubtrees(
+	        unionOp,
+	        (QueryOperator *) finalOrderInput);
+
+
+	/*
+	 * ORDER BY fscoreTopK DESC.
+	 */
+	AttributeReference *finalScoreAr =
+	        getAttrRefByName(
+	                (QueryOperator *) finalOrderInput,
+	                FSCORETOPK);
+
+	OrderExpr *finalOrderExpr =
+	        createOrderExpr(
+	                (Node *) finalScoreAr,
+	                SORT_DESC,
+	                SORT_NULLS_LAST);
+
+	OrderOperator *finalOrder =
+	        createOrderOp(
+	                singleton(finalOrderExpr),
+	                (QueryOperator *) finalOrderInput,
+	                NIL);
+
+	addParent(
+	        (QueryOperator *) finalOrderInput,
+	        (QueryOperator *) finalOrder);
+
+	switchSubtrees(
+	        (QueryOperator *) finalOrderInput,
+	        (QueryOperator *) finalOrder);
+
+
+	/*
+	 * Final global LIMIT k.
+	 */
+	LimitOperator *finalLimit =
+	        createLimitOp(
+	                (Node *) createConstInt(k),
+	                NULL,
+	                (QueryOperator *) finalOrder,
+	                NIL);
+
+	addParent(
+	        (QueryOperator *) finalOrder,
+	        (QueryOperator *) finalLimit);
+
+	switchSubtrees(
+	        (QueryOperator *) finalOrder,
+	        (QueryOperator *) finalLimit);
+
+
+	/*
+	 * Projection wrapper after LIMIT.
+	 */
+	List *finalExprs = NIL;
+	int finalPos = 0;
+
+	FOREACH(AttributeDef, a, finalOrder->op.schema->attrDefs)
+	{
+	    AttributeReference *ar =
+	            createFullAttrReference(
+	                    a->attrName,
+	                    0,
+	                    finalPos,
+	                    0,
+	                    a->dataType);
+
+	    finalExprs =
+	            appendToTailOfList(
+	                    finalExprs,
+	                    ar);
+
+	    finalPos++;
+	}
+
+	ProjectionOperator *finalTopK =
+	        createProjectionOp(
+	                finalExprs,
+	                (QueryOperator *) finalLimit,
+	                NIL,
+	                getAttrNames(finalLimit->op.schema));
+
+	addParent(
+	        (QueryOperator *) finalLimit,
+	        (QueryOperator *) finalTopK);
+
+	switchSubtrees(
+	        (QueryOperator *) finalLimit,
+	        (QueryOperator *) finalTopK);
+
+	INFO_OP_LOG(
+	        "Final top-k explanation patterns Q_pf",
+	        finalTopK);
+
+	return (QueryOperator *) finalTopK;
+
+//	LOG_RESULT("Top-k explanation patterns Q_pf", unionOp);
+//	return unionOp;
+//
+
+//	this was prep for corr (section 5.4)
+	/*
 	List *JoinAttrNames = NIL;
 	List *joinList = NIL;
 	Node *joinCondt = NULL;
@@ -1784,7 +2427,9 @@ rewriteIG_PatternGeneration (ProjectionOperator *sumrows)
 	switchSubtrees((QueryOperator *) po, (QueryOperator *) dr);
 	SET_BOOL_STRING_PROP(dr, PROP_MATERIALIZE);
 
+	*/
 	//Adding CODE FOR R^2 here for testing purposes this will move after JOIN/ get data
+	/*
 	List *aggrsAnalysis = NIL;
 	List *groupByAnalysis = NIL;
 	List *analysisCorrNames = NIL;
@@ -1836,13 +2481,12 @@ rewriteIG_PatternGeneration (ProjectionOperator *sumrows)
 	addChildOperator((QueryOperator *) analysisAggr, (QueryOperator *) dr);
 	switchSubtrees((QueryOperator *) dr, (QueryOperator *) analysisAggr);
 
-
 	LOG_RESULT("Rewritten Pattern Generation tree for patterns", analysisAggr);
 	return analysisAggr;
-
+	*/
 }
 
-
+/*
 static QueryOperator *
 rewriteIG_Analysis (AggregationOperator *patterns)
 {
@@ -2011,6 +2655,8 @@ rewriteIG_Analysis (AggregationOperator *patterns)
 	return (QueryOperator *) lpo;
 
 }
+
+*/
 
 /*
  * Pricing function for P-XDV.
@@ -2764,38 +3410,29 @@ rewriteIG_Projection (ProjectionOperator *op)
 		newAttrNames = appendToTailOfList(newAttrNames, a->attrName);
 
 	/*
-	 * Add Figure-1-style provenance columns before the DG columns.
+	 * Figure-1-style provenance display columns.
 	 *
-	 * Final order before pricing becomes:
+	 * Output order later becomes:
+	 *      Q output | a_* provenance | b_* provenance | ProvW_* | DG | prices
 	 *
-	 *      Q output attributes
-	 *      left/buyer provenance attributes
-	 *      right/seller provenance attributes
-	 *      ProvW attributes
-	 *      DG attributes
-	 *
-	 * This is not hard-coded for AQI. It uses:
-	 *      attrL       = left table attributes, i.e., buyer table a
-	 *      attrR       = right table attributes, i.e., seller table b
-	 *      joinAttrs   = join attributes to avoid repeating year/county
-	 *      child       = rewritten join child containing the attributes
+	 * This block only adds display/provenance columns.
+	 * It does not compute DG.
 	 */
-	List *provWNames = NIL;
 
 	/*
-	 * 1. Buyer-side provenance.
+	 * 1. Buyer-side provenance: a_*
 	 *
-	 * For the running example this gives:
-	 *      a_dwaqi, a_maqi, a_quality
+	 * Skip join attributes such as year/county because they already
+	 * appear in the query output.
 	 *
-	 * We skip join attributes such as year/county because they are already
-	 * shown in the query output.
+	 * Running example:
+	 *      a_dayswaqi, a_maqi, a_quality
 	 */
 	FOREACH(AttributeDef, la, attrL)
 	{
 	    if(!isPrefix(la->attrName, IG_PREFIX)
 	            && !isSuffix(la->attrName, ANNO_SUFFIX)
-	            && searchArList(joinAttrs, la->attrName) == 0)
+	            && searchListString(joinAttrs, la->attrName) == FALSE)
 	    {
 	        int lpos = getAttrPos((QueryOperator *) child, la->attrName);
 
@@ -2820,29 +3457,45 @@ rewriteIG_Projection (ProjectionOperator *op)
 	}
 
 	/*
-	 * 2. Seller-side provenance.
+	 * 2. Seller-side provenance: b_*
 	 *
-	 * Only keep right-side attributes that actually have a right-side IG column.
-	 * This captures attributes such as b.gdays when they are used in CASE WHEN,
-	 * but avoids repeating regular inner-join attributes such as b.year/b.county.
+	 * Keep seller attributes only when they have a right-side converted
+	 * IG column. This catches attributes used inside CASE WHEN, such as:
+	 *
+	 *      b.gdays
+	 *
+	 * even if they are not projected by the original query.
 	 */
 	FOREACH(AttributeDef, ra, attrR)
 	{
 	    if(!isPrefix(ra->attrName, IG_PREFIX)
 	            && !isSuffix(ra->attrName, ANNO_SUFFIX)
-	            && searchArList(joinAttrs, ra->attrName) == 0)
+	            && searchListString(joinAttrs, ra->attrName) == FALSE)
 	    {
-	        char *rightIGName = CONCAT_STRINGS(IG_PREFIX, IG_RIGHT);
-	        rightIGName = CONCAT_STRINGS(rightIGName, ra->attrName);
+	        char *rightIGPrefix = CONCAT_STRINGS(IG_PREFIX, "conv_");
+	        rightIGPrefix = CONCAT_STRINGS(rightIGPrefix, IG_RIGHT);
+
+	        char *rightIGName = CONCAT_STRINGS(rightIGPrefix, ra->attrName);
 
 	        if(getAttrPos((QueryOperator *) child, rightIGName) >= 0)
 	        {
 	            int rpos = getAttrPos((QueryOperator *) child, ra->attrName);
+	            char *refName = ra->attrName;
+
+	            /*
+	             * Fallback for attributes made unique by the join, e.g.,
+	             * county1/year1 in some trees.
+	             */
+	            if(rpos < 0)
+	            {
+	                refName = CONCAT_STRINGS(ra->attrName, "1");
+	                rpos = getAttrPos((QueryOperator *) child, refName);
+	            }
 
 	            if(rpos >= 0)
 	            {
 	                AttributeReference *rar = createFullAttrReference(
-	                        ra->attrName,
+	                        refName,
 	                        0,
 	                        rpos,
 	                        0,
@@ -2861,52 +3514,198 @@ rewriteIG_Projection (ProjectionOperator *op)
 	}
 
 	/*
-	 * 3. ProvW columns.
+	 * 3. Value provenance display: ProvW_*
 	 *
-	 * For every left-side IG attribute, add a value-provenance display column.
+	 * For every left-side converted IG column, display the original
+	 * buyer-side value that the integrated output is compared against.
 	 *
-	 * For the running example:
-	 *      IG_left_quality / IG_left_quality_integ
-	 *
-	 * gives:
-	 *      ProvW_quality
-	 *
-	 * The expression stores the buyer-side source value. If later you also
-	 * carry tuple ids a1, a2, ..., then this can be replaced by a textual
-	 * provenance id such as a_i.quality.
+	 * Running example:
+	 *      ig_conv_left_quality -> ProvW_quality
 	 */
-	FOREACH(AttributeDef, la, attrL)
+	List *provWBaseNames = NIL;
+
+	FOREACH(AttributeDef, ca, child->schema->attrDefs)
 	{
-	    if(isPrefix(la->attrName, IG_PREFIX))
+	    char *leftIGPrefix = CONCAT_STRINGS(IG_PREFIX, "conv_");
+	    leftIGPrefix = CONCAT_STRINGS(leftIGPrefix, IG_LEFT);
+
+	    if(ca->dataType == DT_BIT10 && isPrefix(ca->attrName, leftIGPrefix))
 	    {
-	        char *provAttr = replaceSubstr(la->attrName, IG_PREFIX, "");
-	        provAttr = replaceSubstr(provAttr, IG_LEFT, "");
-	        provAttr = replaceSubstr(provAttr, INTEG_SUFFIX, "");
+	        char *baseName = replaceSubstr(ca->attrName, leftIGPrefix, "");
 
-	        if(getAttrPos((QueryOperator *) child, provAttr) >= 0
-	                && searchListString(provWNames, provAttr) == FALSE)
+	        if(searchListString(provWBaseNames, baseName) == FALSE)
 	        {
-	            AttributeDef *origDef = getAttrDefByName((QueryOperator *) child, provAttr);
+	            int basePos = getAttrPos((QueryOperator *) child, baseName);
 
-	            AttributeReference *provWAr = createFullAttrReference(
-	                    provAttr,
-	                    0,
-	                    getAttrPos((QueryOperator *) child, provAttr),
-	                    0,
-	                    origDef->dataType);
+	            if(basePos >= 0)
+	            {
+	                AttributeDef *baseDef = getAttrDefByName((QueryOperator *) child, baseName);
 
-	            newProjExprWithCaseWhen = appendToTailOfList(
-	                    newProjExprWithCaseWhen,
-	                    provWAr);
+	                AttributeReference *provWAr = createFullAttrReference(
+	                        baseName,
+	                        0,
+	                        basePos,
+	                        0,
+	                        baseDef->dataType);
 
-	            newAttrNames = appendToTailOfList(
-	                    newAttrNames,
-	                    CONCAT_STRINGS("ProvW_", provAttr));
+	                newProjExprWithCaseWhen = appendToTailOfList(
+	                        newProjExprWithCaseWhen,
+	                        provWAr);
 
-	            provWNames = appendToTailOfList(provWNames, provAttr);
+	                newAttrNames = appendToTailOfList(
+	                        newAttrNames,
+	                        CONCAT_STRINGS("ProvW_", baseName));
+
+	                provWBaseNames = appendToTailOfList(provWBaseNames, baseName);
+	            }
 	        }
 	    }
 	}
+
+	/*
+	 * Add Figure-1-style provenance columns before the DG columns.
+	 *
+	 * Final order before pricing becomes:
+	 *
+	 *      Q output attributes
+	 *      left/buyer provenance attributes
+	 *      right/seller provenance attributes
+	 *      ProvW attributes
+	 *      DG attributes
+	 *
+	 * This is not hard-coded for AQI. It uses:
+	 *      attrL       = left table attributes, i.e., buyer table a
+	 *      attrR       = right table attributes, i.e., seller table b
+	 *      joinAttrs   = join attributes to avoid repeating year/county
+	 *      child       = rewritten join child containing the attributes
+	 */
+//	List *provWNames = NIL;
+
+	/*
+	 * 1. Buyer-side provenance.
+	 *
+	 * For the running example this gives:
+	 *      a_dwaqi, a_maqi, a_quality
+	 *
+	 * We skip join attributes such as year/county because they are already
+	 * shown in the query output.
+	 */
+//	FOREACH(AttributeDef, la, attrL)
+//	{
+//	    if(!isPrefix(la->attrName, IG_PREFIX)
+//	            && !isSuffix(la->attrName, ANNO_SUFFIX)
+//	            && searchArList(joinAttrs, la->attrName) == 0)
+//	    {
+//	        int lpos = getAttrPos((QueryOperator *) child, la->attrName);
+//
+//	        if(lpos >= 0)
+//	        {
+//	            AttributeReference *lar = createFullAttrReference(
+//	                    la->attrName,
+//	                    0,
+//	                    lpos,
+//	                    0,
+//	                    la->dataType);
+//
+//	            newProjExprWithCaseWhen = appendToTailOfList(
+//	                    newProjExprWithCaseWhen,
+//	                    lar);
+//
+//	            newAttrNames = appendToTailOfList(
+//	                    newAttrNames,
+//	                    CONCAT_STRINGS("a_", la->attrName));
+//	        }
+//	    }
+//	}
+
+	/*
+	 * 2. Seller-side provenance.
+	 *
+	 * Only keep right-side attributes that actually have a right-side IG column.
+	 * This captures attributes such as b.gdays when they are used in CASE WHEN,
+	 * but avoids repeating regular inner-join attributes such as b.year/b.county.
+	 */
+//	FOREACH(AttributeDef, ra, attrR)
+//	{
+//	    if(!isPrefix(ra->attrName, IG_PREFIX)
+//	            && !isSuffix(ra->attrName, ANNO_SUFFIX)
+//	            && searchArList(joinAttrs, ra->attrName) == 0)
+//	    {
+//	        char *rightIGName = CONCAT_STRINGS(IG_PREFIX, IG_RIGHT);
+//	        rightIGName = CONCAT_STRINGS(rightIGName, ra->attrName);
+//
+//	        if(getAttrPos((QueryOperator *) child, rightIGName) >= 0)
+//	        {
+//	            int rpos = getAttrPos((QueryOperator *) child, ra->attrName);
+//
+//	            if(rpos >= 0)
+//	            {
+//	                AttributeReference *rar = createFullAttrReference(
+//	                        ra->attrName,
+//	                        0,
+//	                        rpos,
+//	                        0,
+//	                        ra->dataType);
+//
+//	                newProjExprWithCaseWhen = appendToTailOfList(
+//	                        newProjExprWithCaseWhen,
+//	                        rar);
+//
+//	                newAttrNames = appendToTailOfList(
+//	                        newAttrNames,
+//	                        CONCAT_STRINGS("b_", ra->attrName));
+//	            }
+//	        }
+//	    }
+//	}
+//
+//	/*
+//	 * 3. ProvW columns.
+//	 *
+//	 * For every left-side IG attribute, add a value-provenance display column.
+//	 *
+//	 * For the running example:
+//	 *      IG_left_quality / IG_left_quality_integ
+//	 *
+//	 * gives:
+//	 *      ProvW_quality
+//	 *
+//	 * The expression stores the buyer-side source value. If later you also
+//	 * carry tuple ids a1, a2, ..., then this can be replaced by a textual
+//	 * provenance id such as a_i.quality.
+//	 */
+//	FOREACH(AttributeDef, la, attrL)
+//	{
+//	    if(isPrefix(la->attrName, IG_PREFIX))
+//	    {
+//	        char *provAttr = replaceSubstr(la->attrName, IG_PREFIX, "");
+//	        provAttr = replaceSubstr(provAttr, IG_LEFT, "");
+//	        provAttr = replaceSubstr(provAttr, INTEG_SUFFIX, "");
+//
+//	        if(getAttrPos((QueryOperator *) child, provAttr) >= 0
+//	                && searchListString(provWNames, provAttr) == FALSE)
+//	        {
+//	            AttributeDef *origDef = getAttrDefByName((QueryOperator *) child, provAttr);
+//
+//	            AttributeReference *provWAr = createFullAttrReference(
+//	                    provAttr,
+//	                    0,
+//	                    getAttrPos((QueryOperator *) child, provAttr),
+//	                    0,
+//	                    origDef->dataType);
+//
+//	            newProjExprWithCaseWhen = appendToTailOfList(
+//	                    newProjExprWithCaseWhen,
+//	                    provWAr);
+//
+//	            newAttrNames = appendToTailOfList(
+//	                    newAttrNames,
+//	                    CONCAT_STRINGS("ProvW_", provAttr));
+//
+//	            provWNames = appendToTailOfList(provWNames, provAttr);
+//	        }
+//	    }
+//	}
 
     FOREACH(AttributeDef, a, child->schema->attrDefs)
     {
@@ -3054,6 +3853,72 @@ rewriteIG_Projection (ProjectionOperator *op)
     	}
     }
 
+    /*
+     * BUG FIX:
+     *
+     * Add integrated DG columns for right-side/seller-only attributes
+     * that were captured because they occur in CASE WHEN conditions,
+     * but are not themselves projected by the input query.
+     *
+     * Example:
+     *      CASE WHEN (... b.gdays <= 70) THEN ...
+     *
+     * TableAccess already created:
+     *      ig_conv_right_gdays
+     *
+     * But the old code never created:
+     *      ig_conv_right_gdays_integ
+     *
+     * Without the _integ column, rewriteIG_HammingFunctions() never
+     * computes:
+     *      hamming_right_gdays_integ
+     *      value_right_gdays_integ
+     *      IG_right_gdays_integ
+     */
+    char *rightConvPrefix = CONCAT_STRINGS(IG_PREFIX, "conv_");
+    rightConvPrefix = CONCAT_STRINGS(rightConvPrefix, IG_RIGHT);
+
+    char *leftConvPrefix = CONCAT_STRINGS(IG_PREFIX, "conv_");
+    leftConvPrefix = CONCAT_STRINGS(leftConvPrefix, IG_LEFT);
+
+    FOREACH(AttributeDef, a, child->schema->attrDefs)
+    {
+        if(a->dataType == DT_BIT10 && isPrefix(a->attrName, rightConvPrefix))
+        {
+            /*
+             * Example:
+             *      rightAttrName = ig_conv_right_gdays
+             *      leftAttrName  = ig_conv_left_gdays
+             *
+             * If the left version does not exist, this is seller-only data.
+             * It should be compared with 0 according to DG case (3).
+             */
+            char *rightAttrName = a->attrName;
+            char *leftAttrName = replaceSubstr(rightAttrName, rightConvPrefix, leftConvPrefix);
+            char *rightIntegName = CONCAT_STRINGS(rightAttrName, INTEG_SUFFIX);
+
+            if(!MAP_HAS_STRING_KEY(igAttrs, leftAttrName)
+                    && searchListString(addIgAttrs, rightIntegName) == FALSE)
+            {
+                AttributeReference *rightAr = createFullAttrReference(
+                        rightAttrName,
+                        0,
+                        getAttrPos((QueryOperator *) child, rightAttrName),
+                        0,
+                        a->dataType);
+
+                /*
+                 * For seller-only attributes:
+                 *
+                 *      ig_conv_right_gdays_integ = ig_conv_right_gdays
+                 *
+                 * Hamming will then compare it against 0.
+                 */
+                addIgExprs = appendToTailOfList(addIgExprs, rightAr);
+                addIgAttrs = appendToTailOfList(addIgAttrs, rightIntegName);
+            }
+        }
+    }
 
     List *allExprs = CONCAT_LISTS(newProjExprWithCaseWhen,addIgExprs);
     List *allAttrs = CONCAT_LISTS(newAttrNames,addIgAttrs);
@@ -3128,77 +3993,94 @@ rewriteIG_Projection (ProjectionOperator *op)
 //	This function adds the + expression to calculate the total distance
 	ProjectionOperator *sumrows = rewriteIG_SumExprs(hammingvalue_op);
 
+	/*
+	 * Build a clean projection over Q_dg.
+	 *
+	 * At this point, sumrows already contains:
+	 *
+	 *      query output attributes
+	 *      captured provenance attributes
+	 *      internal conversion attributes
+	 *      hamming attributes
+	 *      value_* attribute-level DG columns
+	 *      Total_IG
+	 *
+	 * This projection does not decide which columns are displayed.
+	 * It only gives final names to the DG columns:
+	 *
+	 *      value_left_quality_integ  -> IG_left_quality_integ
+	 *      value_right_gdays_integ   -> IG_right_gdays_integ
+	 *
+	 * All other columns retain their current names.
+	 * Internal helper columns are removed later by rewriteIG_Pricing().
+	 */
+	List *cleanExprs = NIL;
+	List *cleanNames = NIL;
+
+	int cleanPos = 0;
+
+	FOREACH(AttributeDef, a, sumrows->op.schema->attrDefs)
+	{
+	    /*
+	     * Reference the output of sumrows directly instead of reusing
+	     * its internal expressions.
+	     */
+	    AttributeReference *ar = createFullAttrReference(a->attrName,0,cleanPos,0,a->dataType);
+	    cleanExprs = appendToTailOfList(cleanExprs, ar);
+
+	    /*
+	     * Rename every attribute-level DG column generically:
+	     *
+	     *      value_* -> IG_*
+	     *
+	     * No attribute names or prefix lengths are hard-coded.
+	     */
+	    if(isPrefix(a->attrName, VALUE_IG))
+	    {
+	        char *displayName =replaceSubstr(a->attrName, VALUE_IG, "IG_");
+	        cleanNames = appendToTailOfList(cleanNames,displayName);
+	    }
+	    else
+	    {
+	        cleanNames = appendToTailOfList(cleanNames,strdup(a->attrName));
+	    }
+
+	    cleanPos++;
+	}
+
+	ProjectionOperator *cleanProj =createProjectionOp(cleanExprs, NULL, NIL, cleanNames);
+	addChildOperator((QueryOperator *) cleanProj,(QueryOperator *) sumrows);
+	switchSubtrees((QueryOperator *) sumrows,(QueryOperator *) cleanProj);
+
+	/*
+	 * Preserve the original query-output schema.
+	 *
+	 * Example for the running query:
+	 *      year, county, quality
+	 *
+	 * Later stages can use this property to distinguish the original
+	 * query result from provenance, DG, and price annotations.
+	 */
+	SET_STRING_PROP(cleanProj,IG_INPUT_DEFS_PROP,copyObject(op->op.schema->attrDefs));
+
+	ProjectionOperator *priceProj = rewriteIG_Pricing(cleanProj);
+
 	if(explFlag == FALSE)
 	{
-
-		//clean up for projection
-		List *cleanExprs = NIL;
-		List *cleanNames = NIL;
-
-		//converting name : value to IG
-		FOREACH(AttributeReference, a, sumrows->projExprs)
-		{
-			if(!isA(a, Operator))
-			{
-				if(isPrefix(a->name, VALUE_IG))
-				{
-					char *displayName = NULL;
-					cleanExprs = appendToTailOfList(cleanExprs, a);
-					char *s2 = substr(a->name, 6, strlen(a->name) - 1); //contains : _tableName_attributeName
-					displayName = CONCAT_STRINGS("IG_", s2);
-					cleanNames = appendToTailOfList(cleanNames, displayName);
-
-				}
-
-				else
-				{
-					cleanExprs = appendToTailOfList(cleanExprs, a);
-					cleanNames = appendToTailOfList(cleanNames, a->name);
-				}
-			}
-		}
-
-		FOREACH(AttributeReference, a, sumrows->projExprs)
-		{
-			if(isA(a, Operator))
-			{
-				cleanExprs = appendToTailOfList(cleanExprs, a);
-				cleanNames = appendToTailOfList(cleanNames, strdup(TOTAL_IG));
-
-			}
-		}
-
-		ProjectionOperator *cleanProj = createProjectionOp(cleanExprs, NULL, NIL, cleanNames);
-		addChildOperator((QueryOperator *) cleanProj, (QueryOperator *) sumrows);
-		switchSubtrees((QueryOperator *) sumrows, (QueryOperator *) cleanProj);
-
-		/*
-		 * Preserve the original query output attributes.
-		 * This lets rewriteIG_Pricing distinguish:
-		 *
-		 *      Q output attributes
-		 *      provenance attributes
-		 *      DG attributes
-		 *      price attributes
-		 *
-		 * without hard-coding names such as year, county, quality.
-		 */
-		SET_STRING_PROP(cleanProj, IG_INPUT_DEFS_PROP, copyObject(op->op.schema->attrDefs));
-
-		ProjectionOperator *priceProj = rewriteIG_Pricing(cleanProj);
-
 		INFO_OP_LOG("Rewritten Operator tree with prices", (QueryOperator *) priceProj);
 		return (QueryOperator *) priceProj;
 	}
 	else
 	{
-		AggregationOperator *patterns = rewriteIG_PatternGeneration(sumrows);
-		QueryOperator *analysis = rewriteIG_Analysis(patterns);
-		INFO_OP_LOG("Rewritten Operator tree for patterns", (QueryOperator *) analysis);
+//		AggregationOperator *patterns = rewriteIG_PatternGeneration(sumrows);
+		QueryOperator *patterns = rewriteIG_PatternGeneration(priceProj);
+//		section 5.4 anout corr removed for now
+//		QueryOperator *analysis = rewriteIG_Analysis(patterns);
+		INFO_OP_LOG("Rewritten Operator tree for patterns", patterns);
 
 		//this was only created for QueryOperator *analysis
 		//do not use it with AggregationOperator
-		QueryOperator *cleanqo = cleanEXPL((QueryOperator *) analysis);
+		QueryOperator *cleanqo = cleanEXPL((QueryOperator *) patterns);
 
 		ProjectionOperator *po = (ProjectionOperator *) cleanqo;
 		List *newProjExprs = NIL;
@@ -3208,7 +4090,8 @@ rewriteIG_Projection (ProjectionOperator *op)
 		{
 			AttributeReference *newAr = NULL;
 
-			if(streq(ar->name, PATTERN_IG) || streq(ar->name, "mean_r2") ||
+			if(streq(ar->name, PATTERN_IG) ||
+//					streq(ar->name, "mean_r2") ||
 					streq(ar->name, COVERAGE) || streq(ar->name, INFORMATIVENESS))
 			{
 				char *newArName = NULL;
@@ -3216,8 +4099,8 @@ rewriteIG_Projection (ProjectionOperator *op)
 				if(streq(ar->name, PATTERN_IG))
 					newArName = "imp";
 
-				if(streq(ar->name, "mean_r2"))
-					newArName = "corr";
+//				if(streq(ar->name, "mean_r2"))
+//					newArName = "corr";
 
 				if(streq(ar->name, COVERAGE))
 					newArName = "cov";
@@ -3240,17 +4123,17 @@ rewriteIG_Projection (ProjectionOperator *op)
 		}
 
 		// TODO: Total impact and total provenance
-		Node *totImp = (Node *) createConstInt(1805);
-		char *totImpName = "totImp";
-
-		Node *totProv = (Node *) createConstInt(683);
-		char *totProvName = "totProv";
-
-		List *tot = LIST_MAKE(totImp, totProv);
-		List *totNames = LIST_MAKE(totImpName, totProvName);
-
-		newProjExprs = CONCAT_LISTS(newProjExprs, tot);
-		newAttrs = CONCAT_LISTS(newAttrs, totNames);
+//		Node *totImp = (Node *) createConstInt(1805);
+//		char *totImpName = "totImp";
+//
+//		Node *totProv = (Node *) createConstInt(683);
+//		char *totProvName = "totProv";
+//
+//		List *tot = LIST_MAKE(totImp, totProv);
+//		List *totNames = LIST_MAKE(totImpName, totProvName);
+//
+//		newProjExprs = CONCAT_LISTS(newProjExprs, tot);
+//		newAttrs = CONCAT_LISTS(newAttrs, totNames);
 
 		ProjectionOperator *finalpo = createProjectionOp(newProjExprs, NULL, NIL, newAttrs);
 		addChildOperator((QueryOperator *) finalpo, (QueryOperator *) cleanqo);
